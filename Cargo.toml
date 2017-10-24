@@ -1,0 +1,35 @@
+[package]
+authors = ["Jorge Aparicio <jorge@japaric.io>"]
+categories = [
+    "embedded",
+    "no-std",
+]
+description = "A template for building applications for ARM Cortex-M microcontrollers"
+keywords = [
+    "arm",
+    "cortex-m",
+    "template",
+]
+license = "MIT OR Apache-2.0"
+name = "cortex-m-quickstart"
+repository = "https://github.com/japaric/cortex-m-quickstart"
+version = "0.2.1"
+
+[dependencies]
+cortex-m-rtfm = "0.2.1"
+
+[dependencies.blue-pill]
+git = "https://github.com/japaric/blue-pill"
+
+[dependencies.cortex-m]
+version = "0.3.0"
+
+[dependencies.cortex-m-rt]
+features = ["abort-on-panic"]
+version = "0.3.3"
+
+[dependencies.cortex-m-semihosting]
+version = "0.2.0"
+[profile.release]
+debug = true
+lto = true
