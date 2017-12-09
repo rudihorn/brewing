@@ -18,6 +18,9 @@ version = "0.2.1"
 [dependencies]
 cortex-m-rtfm = "0.2.1"
 
+[dependencies.tslib]
+path = "../tslib/"
+
 [dependencies.blue-pill]
 git = "https://github.com/japaric/blue-pill"
 
