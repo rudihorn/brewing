@@ -1,5 +1,6 @@
 
-target remote 192.168.99.2:3333
+#target remote 192.168.99.2:3333
+target remote localhost:3333
 
 # monitor arm semihosting enable
 

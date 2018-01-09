@@ -180,12 +180,13 @@ fn init(p: init::Peripherals) {
     rcc_periph.iopc.enable_gpioc();
     rcc_periph.i2c1.enable_i2c1();
 
+    /* our code */
     let gpiob = Gpio(p.GPIOB);
     let pinsb = gpiob.get_pins();
 
     // setup 
-    let pinb8 = pinsb.8.set_output_2MHz_h().set_alt_output_open_drain_h();
-    let pinb9 = pinsb.9.set_output_2MHz_h().set_alt_output_open_drain_h();
+    let pinb8 = pinsb.8.set_output_10MHz_h().set_alt_output_open_drain_h();
+    let pinb9 = pinsb.9.set_output_10MHz_h().set_alt_output_open_drain_h();
 
     // setup SPI pins
     let gpioa = Gpio(p.GPIOA);
@@ -225,36 +226,73 @@ fn init(p: init::Peripherals) {
         let r = i2c1.start_init();
 
         let bsm = r.0.set_fast_mode(10);
-        let freq = r.1.set(8);
-        let trise = r.2.set(4);
+        let freq = r.1.set(8); // configure frequency
+        let trise = r.2.set(4); // configure rise time
         let ports = r.3.set_ports_remapped(pinb8, pinb9, afio_i2c1);
         i2c1.complete_init(bsm, freq, trise, ports);
-
-
     }    
 
-
-    ssd1306::sync_init(&i2c1, stim);
-
     // i2c1.listen();
+    ssd1306::sync_init(&i2c1, stim);
 }
 
 
 fn idle(t: &mut Threshold, r: idle::Resources) -> ! {
     use rtfm::Resource;
     use core::ops::Deref;
-    let s = r.SPI2.claim(t, |spi, _t| {
+    /* let s = r.SPI2.claim(t, |spi, _t| {
         let spi = Spi(spi.deref());
 
         unsafe { 
             SPI_RES.start_write(0x80, 0b11010001, &spi);
-            // SPI_RES.start_read(0x0, &spi);
         }
-    }); 
+    }); */
+
+    let stim = &blue_pill::stm32f103xx::ITM;
+
+    let mut i2c = r.I2C1.claim(t, |i2c, t| {
+        r.ITM.claim(t, |itm, t| {
+            let i2c1 = I2c(&**i2c);
+            let stim = &itm.stim[0];
+            iprintln!(stim, "Writing empty");
+
+        });
+    });    
+    
+    ssd1306::write_control_2(t, &r.I2C1, &[0x20, 0, 0x21, 0, 127, 0x22, 0, 7]);
+    
+    for i in 0..64 {
+        r.ITM.claim(t, |itm, _t| {
+            iprintln!(&itm.stim[0], "Writing {}", i);
+        });
+
+        ssd1306::write_data(t, &r.I2C1, &[0, 0, 0, 0, 0, 0, 0, 0]);
+        ssd1306::wait_buffer();
+    } 
+
+    r.ITM.claim(t, |itm, _t| {
+        iprintln!(&itm.stim[0], "control");
+    });
+
+    ssd1306::write_control_2(t, &r.I2C1, &[0x21, 0, 127, 0x22, 1, 7]);
+
+    for i in 1..4 {
+        let num = &ssd1306::NUMBERS[i];
+        ssd1306::write_data(t, &r.I2C1, num);
+        ssd1306::write_data(t, &r.I2C1, &[0, 0]);
+    }
+    /* for i in 6..8 {
+        let num = &ssd1306::NUMBERS[i];
+        ssd1306::write_data(t, &r.I2C1, num);
+        ssd1306::write_data(t, &r.I2C1, &[0, 0]);
+    }
+ */
+    r.ITM.claim(t, |itm, t| {
+        iprintln!(&itm.stim[0], "done rest");
+    });
 
     loop {
         rtfm::wfi();
-
     }
 }
 
@@ -265,9 +303,18 @@ pub enum ReadState {
 }
 
 fn i2c_ev_interrupt(_t: &mut Threshold, r: I2C1_EV::Resources) {
+    let a = (r.I2C1).sr1.read().bits();
+    let itm = &r.ITM.stim[0];
+    //iprintln!(itm, "ev {}", a);
+    let i2c = &**r.I2C1;
+    let i2c = I2c(i2c);
+    ssd1306::event_interrupt(&i2c, itm);
 }
 
 fn i2c_er_interrupt(_t: &mut Threshold, r: I2C1_ER::Resources) {
+    let a = (r.I2C1).sr1.read();
+    let itm = &r.ITM.stim[0];
+    iprintln!(itm, "er {} / AF {}", a.bits(), a.af().bit_is_set());
     rtfm::bkpt();
 }
 
@@ -299,10 +346,10 @@ fn spi_interrupt(_t: &mut Threshold, r: SPI2::Resources) {
                         let val : u16 = ((SPI_RES.result as u16) << 8) | (lsb as u16);
                         if val != LAST_TEMP {
                             LAST_TEMP = val;
-                            iprint!(stim, "val: {} ", val);
+                            //iprint!(stim, "val: {} ", val);
                             let conv = ((val >> 1) as u32 * 43234) >> 15;
                             let temp = temp_conversion::lookup_temperature(conv as u16);
-                            iprintln!(stim, "-> {}", temp);
+                            //iprintln!(stim, "-> {}", temp);
                         }
 
                         // read next value

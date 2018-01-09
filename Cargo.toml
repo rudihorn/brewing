@@ -27,6 +27,10 @@ git = "https://github.com/japaric/blue-pill"
 [dependencies.cortex-m]
 version = "0.3.0"
 
+[dependencies.stm32f103xx]
+features = ["rt"]
+version = "0.7.2"
+
 [dependencies.cortex-m-rt]
 features = ["abort-on-panic"]
 version = "0.3.3"

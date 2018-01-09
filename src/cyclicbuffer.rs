@@ -19,6 +19,15 @@ impl<'a, T: 'a + Copy> CyclicBuffer<'a, T> {
     }
 
     #[inline(always)]
+    pub fn peak(&self) -> Option<T> {
+        if self.empty() {
+            None
+        } else {
+            Some(self.data[self.ptr] as T)
+        }
+    }
+
+    #[inline(always)]
     pub fn read(&mut self) -> Option<T> {
         if self.empty() {
             None
@@ -33,5 +42,10 @@ impl<'a, T: 'a + Copy> CyclicBuffer<'a, T> {
     #[inline(always)]
     pub fn empty(&self) -> bool {
         self.len == 0
+    }
+
+    #[inline(never)]
+    pub fn length(&self) -> usize {
+        self.len
     }
 }

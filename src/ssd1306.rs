@@ -1,7 +1,9 @@
 
-use ::tslib::i2c::{I2c, I2C, I2CState};
+use ::core::any::Any;
+use ::tslib::i2c::{I2c, I2C, I2CState, I2cState, I2cStateOptions, Write};
 #[macro_use(iprint, iprintln)]
 use ::cortex_m;
+use ::blue_pill::stm32f103xx::I2C1;
 
 use ::cyclicbuffer::CyclicBuffer;
 
@@ -23,20 +25,69 @@ const CMD_LOWERCOL : u8 = 0x00;
 const CMD_SETSTARTLINE : u8 = 0x40;
 const CMD_MEMORYMODE : u8 = 0x20;
 const CMD_INVERTDISPLAY : u8 = 0xA6;
-static NUMBERS : [[u8;5];2] = [
+pub static NUMBERS : [[u8;5];9] = [
+    [ // 0
+        0b01111110,
+        0b10000001,
+        0b10000001,
+        0b10000001,
+        0b01111110,
+    ], // 1
     [
         0b00000000,
         0b01000001,
         0b11111111,
         0b00000001,
         0b00000000,
-    ],
+    ], // 2
     [
-        0b00100011,
-        0b01000101,
+        0b01000011,
+        0b10000101,
         0b10001001,
         0b10010001,
         0b01100001,
+    ], // 3
+    [
+        0b01000010,
+        0b10000001,
+        0b10010001,
+        0b10010001,
+        0b01101110,
+    ], // 4
+    [
+        0b00011000,
+        0b00101000,
+        0b01001000,
+        0b11111111,
+        0b00001000,
+    ], // 5
+    [
+        0b11110001,
+        0b10010001,
+        0b10010001,
+        0b10010001,
+        0b10001110,
+    ], // 6
+    [
+        0b01111110,
+        0b10010001,
+        0b10010001,
+        0b10010001,
+        0b10001110,
+    ], // 7
+    [
+        0b11000000,
+        0b10001111,
+        0b10010000,
+        0b10100000,
+        0b11000000,
+    ], // 8
+    [
+        0b01101110,
+        0b10010001,
+        0b10010001,
+        0b10010001,
+        0b11101110,
     ]
 ];
 
@@ -75,8 +126,8 @@ pub fn sync_init<'a, S>(i2c: &I2c<'a, S>, stim: &::cortex_m::peripheral::Stim) w
         .cont(|| {write_control(&i2c, CMD_SETDISPLAYOFFSET)})
         .cont(|| {write_control(&i2c, 0x00)})
         .cont(|| {write_control(&i2c, CMD_SETSTARTLINE)})
-        //.cont(|| {write_control(&i2c, CMD_MEMORYMODE)})
-        //.cont(|| {write_control(&i2c, 0x00)})
+        .cont(|| {write_control(&i2c, CMD_MEMORYMODE)})
+        .cont(|| {write_control(&i2c, 0x00)})
         .cont(|| {write_control(&i2c, CMD_CHARGEPUMP)})
         .cont(|| {write_control(&i2c, 0x14)})
         .cont(|| {write_control(&i2c, CMD_SETSEGREMAP | 0x01)})
@@ -97,6 +148,12 @@ pub fn sync_init<'a, S>(i2c: &I2c<'a, S>, stim: &::cortex_m::peripheral::Stim) w
     iprintln!(stim, "state {}", a);
 
     let a = a.cont(|| { i2c.start_write_polling(ADDRESS)})
+        .cont(|| {i2c.write_data(0x80)})
+        .cont(|| {i2c.write_data(0x21)})
+        .cont(|| {i2c.write_data(0x80)})
+        .cont(|| {i2c.write_data(0x00)})
+        .cont(|| {i2c.write_data(0x80)})
+        .cont(|| {i2c.write_data(127)})
         .cont(|| {i2c.write_data(0x40)})
         .cont(|| {i2c.write_data(0x00)})
         .cont(|| {i2c.write_data(0x00)})
@@ -140,61 +197,183 @@ pub fn sync_init<'a, S>(i2c: &I2c<'a, S>, stim: &::cortex_m::peripheral::Stim) w
     }
 
     st = st.cont(|| {i2c.stop()});
+    let cr1 = i2c.0.cr1.read().bits();
 
     if let I2CState::Error(e) = st {
-        ::rtfm::bkpt;
+        ::rtfm::bkpt();
     }
 }
 
 
-static mut _BUFFER : [u8;256] = [0; 256];
+const _BUF_LEN : usize = 512; 
+static mut _BUFFER : [u8;_BUF_LEN] = [0; _BUF_LEN];
 static mut BUFFER : CyclicBuffer<u8> = unsafe { CyclicBuffer { data: &mut _BUFFER, ptr: 0, len: 0} };
 
 pub enum LcdState {
+    Stopped,
     Idle,
     Data(u8),
     Control(u8),
+    Control2(u8),
 }
-static mut LCD_STATE : LcdState = LcdState::Idle;
 
-pub fn event_interrupt<'a, S>(i2c: &I2c<'a, S>) where S : 'static + I2C {
-    /* 
-    let state = i2c.0.sr1.read();
+static mut LCD_STATE : LcdState = LcdState::Stopped;
 
-    if state.sb().bit_is_set() {
-        i2c.start_write_async(ADDRESS);
-    } else if state.tx_e().bit_is_set() {
-        match LCD_STATE {
-            LcdState::Idle => {
-                let what = BUFFER.read();
-                if let Some(a) = what {
-                    if a & 0x80 == 0 {
-                        LCD_STATE = LcdState::Data(a);                    
-                        i2c.write_async(0x40);
-                    } else {
-                        LCD_STATE = LcdState::Control(a & (!0x80));
-                        i2c.write_async(0x00);
-                    }
-                }
-            }
+#[inline(never)]
+pub fn wait_buffer() {
+    unsafe {
+        while BUFFER.length() > _BUF_LEN / 2 {
+            ::rtfm::wfi(); 
+        }
+    }
+}
+
+use ::rtfm::{Resource, Threshold};
+
+pub fn write_data<'a, S>(t: &mut Threshold, i2c: &S, dat: &[u8]) 
+where 
+    S : Resource<Data = I2C1>
+{
+    unsafe {
+        BUFFER.write(dat.len() as u8);
+
+        for el in dat.iter() {
+            while false == BUFFER.write(*el) { }
         }
     }
 
-    match LCD_STATE {
-        LcdState::Idle => {
-            let what = BFFER.read();
-            if let Some(a) = what {
-                if a & 0x80 == 0 {
-                    LCD_STATE = LcdState::Data(a)                    
-                } else {
-                    LCD_STATE = LcdState::Control(a)
+    unsafe{
+        if let LcdState::Stopped = LCD_STATE {
+            i2c.claim(t, |i2c,t| {
+                I2c(&**i2c).enable_start();
+            });
+            LCD_STATE = LcdState::Idle;
+        }
+    }
+
+    i2c.claim(t, |i2c,t| {
+        I2c(&**i2c).listen();
+    });
+}
+
+pub fn write_control_2<'a, S>(t: &mut Threshold, i2c: &S, dat: &[u8]) 
+where
+    S : Resource<Data = I2C1>
+{
+    unsafe {
+        BUFFER.write(0x80 | dat.len() as u8);
+
+        for el in dat.iter() {
+            while false == BUFFER.write(*el) {::rtfm::wfi() }
+        }
+    }
+
+    unsafe{
+        if let LcdState::Stopped = LCD_STATE {
+            i2c.claim(t, |i2c,t| {
+                I2c(&**i2c).enable_start();
+            });
+            LCD_STATE = LcdState::Idle;
+        }
+    }
+
+    i2c.claim(t, |i2c,t| {
+        I2c(&**i2c).listen();
+    });
+}
+
+pub fn start_next<'a, S: I2C + Any>(i2c: I2cState<'a, S, Write>, itm: &::cortex_m::peripheral::Stim) {
+    unsafe {
+        let a = BUFFER.read();
+        if let Some(a) = a {
+            if a & 0x80 == 0 {
+                LCD_STATE = LcdState::Data(a);
+                i2c.write(0x40);
+                iprintln!(itm, "dat {}", a);
+            } else {
+                let a = a & (!0x80);
+                LCD_STATE = LcdState::Control2(a);
+                i2c.write(0x80);
+                iprintln!(itm, "ctrl {}", a);
+            }
+        } else {
+            ::rtfm::bkpt();
+        }
+    }
+}
+
+pub fn event_interrupt<'a, S>(i2c: &I2c<'a, S>, itm: &::cortex_m::peripheral::Stim) where S : 'static + I2C {
+    unsafe {
+        match i2c.get_state() {
+            I2cStateOptions::Started(s) => {
+                s.write_address(ADDRESS, false);
+                iprintln!(itm, "st");
+            }, 
+            I2cStateOptions::CanWrite(w) => {
+                iprintln!(itm, "wr");
+                match LCD_STATE {
+                    LcdState::Stopped => {
+                        // this should not happen
+                        ::rtfm::bkpt(); 
+                    }
+                    LcdState::Idle => {
+                        start_next(w, itm);
+                        //iprintln!(itm, "idle {}", i2c.0.sr1.read().bits());
+                    },
+                    LcdState::Control(b) => {
+                        if b > 0 {
+                            w.write(0x80);
+                            LCD_STATE = LcdState::Control2(b);
+                        } else {
+                            iprintln!(itm, "ectrl");
+                            start_next(w, itm)
+                        }
+                    },
+                    LcdState::Control2(b) => {
+                        let d = BUFFER.read();
+                        if let Some(d) = d {
+                            iprintln!(itm, "cb {}", d);
+                            w.write(d);
+                            LCD_STATE = LcdState::Control(b - 1);
+                        } else {
+                            iprintln!(itm, "ctrle");
+                            w.suspend();
+                        }
+                    },
+                    LcdState::Data(b) => {
+                        // there is still data to write
+                        if b > 0 {
+                            let d = BUFFER.read();
+                            if let Some(d) = d {
+                                iprintln!(itm, "db {}", d);
+                                w.write(d);
+                                LCD_STATE = LcdState::Data(b - 1);
+                            } else {
+                                iprintln!(itm, "dbe");
+                                // data to write but buffer is empty
+                                w.suspend()
+                            }
+                        } else {
+                            iprintln!(itm, "nmd");
+                            if let Some(d) = BUFFER.peak() {
+                                if d & 0x80 == 0 {
+                                    // if we have further data just queue it
+                                    BUFFER.read();
+                                    LCD_STATE = LcdState::Data(d)
+                                } else {
+                                    i2c.enable_start();
+                                    LCD_STATE = LcdState::Idle;
+                                } 
+                            } else {
+                                iprintln!(itm, "stopped");
+                                w.stop();
+                                LCD_STATE = LcdState::Stopped;
+                            }
+                        }
+                    }
                 }
             }
-            if i2c.is_start_flag_set_async() {
-                i2c.start_write(ADDRESS);
-                MOD_STATE = ModuleState::PowerOff
-            }
-        },
-
-    } */
+            _ => ()
+        }
+    }
 }
