@@ -1,31 +1,18 @@
-//! Sends "Hello, world!" through the ITM port 0
-//!
-//! **IMPORTANT** Not all Cortex-M chips support ITM. You'll have to connect the
-//! microcontroller's SWO pin to the SWD interface. Note that some development
-//! boards don't provide this option.
-//!
-//! ITM is much faster than semihosting. Like 4 orders of magnitude or so.
-//!
-//! You'll need [`itmdump`] to receive the message on the host plus you'll need
-//! to uncomment the `monitor` commands in the `.gdbinit` file.
-//!
-//! [`itmdump`]: https://docs.rs/itm/0.1.1/itm/
-//!
-//! ---
-
-#![feature(get_type_id)]
-#![feature(proc_macro)]
 #![no_std]
+#![feature(proc_macro)]
 
-extern crate blue_pill;
-#[allow(unused_imports)]
-#[macro_use(iprint, iprintln)]
-extern crate cortex_m;
-extern crate cortex_m_rtfm as rtfm;
-extern crate tslib;
+pub extern crate tslib;
+pub extern crate cortex_m;
+pub extern crate cortex_m_rtfm as rtfm;
+pub extern crate cortex_m_semihosting as sh;
 
-use rtfm::{app, Threshold};
+pub use tslib::stm32f103xx_hal as hal;
+pub use hal::stm32f103xx as stm32;
 
+use rtfm::{app, Resource, Threshold};
+
+#[macro_use]
+pub mod debug;
 pub mod cyclicbuffer;
 pub mod bh1750;
 pub mod ssd1306;
@@ -38,138 +25,53 @@ use afio::Afio;
 use gpio::{Gpio};
 use spi::{Spi, SPIResult};
 use i2c::{I2c};
-use blue_pill::Timer;
-use blue_pill::prelude::*;
-use blue_pill::time::Hertz;
-use cortex_m::peripheral::Stim;
+use bh1750::{SPI_RES, SpiState};
 
-const FREQUENCY: Hertz = Hertz(2);
-
-
-pub enum SpiState {
-    Idle,
-    ReadFirst,
-    ReadSecond,
-    WriteFirst,
-    WriteSecond,
-    Finished
-}
-
-pub enum SpiAction {
-    Read,
-    Write(u8),
-}
-
-pub struct SpiResource {
-    pub action : SpiAction,
-    pub state : SpiState,
-
-    pub result : u8,
-}
-
-
-static mut SPI_RES: SpiResource = SpiResource { 
-    action: SpiAction::Read,
-    state: SpiState::Idle,
-
-    result: 0,
-}; 
+use cortex_m::peripheral::{Peripherals, ITM};
+use stm32::{I2C1, SPI2 as SPI2_reg};
 
 app! {
-    device: blue_pill::stm32f103xx,
+    device: stm32,
+
+    resources: {
+        static I2C1: I2C1;
+        static SPI2_reg: SPI2_reg;
+    },
 
     idle: {
-        resources: [TIM1, ITM, I2C1, SPI2],
+        resources: [I2C1],
     }, 
 
     tasks: {
         I2C1_EV: {
             path: i2c_ev_interrupt,
             priority: 1,
-            resources: [ITM, I2C1]
+            resources: [I2C1]
         },
         I2C1_ER: {
             path: i2c_er_interrupt,
             priority: 1,
-            resources: [ITM, I2C1]
+            resources: [I2C1]
         },
         SPI2: {
             path: spi_interrupt,
             priority: 1,
-            resources: [ITM, SPI2]
+            resources: [I2C1, SPI2_reg]
         },
     },
 }
 
-impl SpiResource {
-    pub fn start_read<'a, S : spi::SPI + 'static>(&mut self, reg: u8, spi : &Spi<'a, S>) {
-        spi.enable();
-        //rtfm::bkpt();
-        spi.send(reg);
-
-        self.state = SpiState::ReadFirst;
-        self.action = SpiAction::Read;
-    }
-
-    pub fn start_write<'a, S : spi::SPI + 'static>(&mut self, reg: u8, val: u8, spi : &Spi<'a, S>) {
-        spi.enable();
-        spi.send(reg);
-
-        self.state = SpiState::ReadFirst;
-        self.action = SpiAction::Write(val);
-    }
-
-    pub fn read<'a, S : spi::SPI + 'static>(&mut self, stim : &Stim, spi : &Spi<'a, S>) -> Option<u8> {
-        let b = spi.read();
-        match b {
-            SPIResult::Success(a) => {
-                Some(a)
-            },
-            SPIResult::Error(e) =>  {
-                // iprintln!(stim, "read error: {}", e);
-                None
-            }
-        }
-    }
-
-    pub fn process_int<'a, S : spi::SPI + 'static>(&mut self, stim : &Stim, spi : &Spi<'a, S>) {
-        match self.state {
-        SpiState::ReadFirst => 
-            {   
-                let b = self.read(stim, spi);
-                if let Some(a) = b {
-                    match self.action {
-                        SpiAction::Read => spi.send(0),
-                        SpiAction::Write(a) => spi.send(a),
-                    };
-                    self.state = SpiState::ReadSecond
-                }
-            }
-        SpiState::ReadSecond => 
-            {
-                let b = self.read(stim, spi);
-                if let Some(a) = b {
-                    self.result = a;
-                    spi.disable();
-                    self.state = SpiState::Finished
-                }
-            },
-            _ => {}
-        }
-    }
-}
 
 #[inline(never)]
-fn init(p: init::Peripherals) {
-    let stim = &p.ITM.stim[0];
-    iprintln!(stim, "SPI Example");
+fn init(mut p: init::Peripherals) -> init::LateResources {
+    iprintln!("SPI Example");
 
     /* let timer = Timer(p.TIM1);
 
     timer.init(FREQUENCY.invert(), p.RCC);
     timer.resume(); */
 
-    let rcc = Rcc(p.RCC);
+    let rcc = Rcc(&p.device.RCC);
     let rcc_periph = rcc.get_peripherals();
 
     rcc_periph.afio.enable();
@@ -181,7 +83,7 @@ fn init(p: init::Peripherals) {
     rcc_periph.i2c1.enable_i2c1();
 
     /* our code */
-    let gpiob = Gpio(p.GPIOB);
+    let gpiob = Gpio(&p.device.GPIOB);
     let pinsb = gpiob.get_pins();
 
     // setup 
@@ -189,7 +91,7 @@ fn init(p: init::Peripherals) {
     let pinb9 = pinsb.9.set_output_10MHz_h().set_alt_output_open_drain_h();
 
     // setup SPI pins
-    let gpioa = Gpio(p.GPIOA);
+    let gpioa = Gpio(&p.device.GPIOA);
     let pinsa = gpioa.get_pins();
     
     let pina4 = pinsa.4.set_output_10MHz().set_alt_output_push_pull();
@@ -202,14 +104,14 @@ fn init(p: init::Peripherals) {
     let pinb14 = pinsb.14.set_input_h().set_floating_input_h(); // MISO
     let pinb15 = pinsb.15.set_output_10MHz_h().set_alt_output_push_pull_h(); // MISO
 
-    let afio = Afio(p.AFIO);
+    let afio = Afio(&p.device.AFIO);
     let afio_periph = afio.get_peripherals();
 
     // configure afio so it doesn't remap spi
     let afio_spi1 = afio_periph.spi1.set_not_remapped_spi1();
 
-    let spi2 = Spi(p.SPI2);
     {
+        let spi2 = Spi(&p.device.SPI2);
         let r = spi2.start_init();
 
         //let ports = r.set_ports_normal(pina4, pina5, pina6, pina7, afio_spi1);
@@ -220,9 +122,9 @@ fn init(p: init::Peripherals) {
         spi2.listen();
     }    
 
-    let afio_i2c1 = afio_periph.i2c1.set_remapped();
-    let i2c1 = I2c(p.I2C1);
     {
+        let afio_i2c1 = afio_periph.i2c1.set_remapped();
+        let i2c1 = I2c(&p.device.I2C1);
         let r = i2c1.start_init();
 
         let bsm = r.0.set_fast_mode(10);
@@ -230,17 +132,21 @@ fn init(p: init::Peripherals) {
         let trise = r.2.set(4); // configure rise time
         let ports = r.3.set_ports_remapped(pinb8, pinb9, afio_i2c1);
         i2c1.complete_init(bsm, freq, trise, ports);
-    }    
 
-    // i2c1.listen();
-    ssd1306::sync_init(&i2c1, stim);
+        ssd1306::sync_init(&i2c1);
+    } 
+    
+    init::LateResources {
+        I2C1: p.device.I2C1,
+        SPI2_reg: p.device.SPI2,
+    }
 }
 
 
 fn idle(t: &mut Threshold, r: idle::Resources) -> ! {
     use rtfm::Resource;
-    use core::ops::Deref;
-    /* let s = r.SPI2.claim(t, |spi, _t| {
+    /* use core::ops::Deref;
+    let s = r.SPI2.claim(t, |spi, _t| {
         let spi = Spi(spi.deref());
 
         unsafe { 
@@ -248,31 +154,21 @@ fn idle(t: &mut Threshold, r: idle::Resources) -> ! {
         }
     }); */
 
-    let stim = &blue_pill::stm32f103xx::ITM;
-
     let mut i2c = r.I2C1.claim(t, |i2c, t| {
-        r.ITM.claim(t, |itm, t| {
-            let i2c1 = I2c(&**i2c);
-            let stim = &itm.stim[0];
-            iprintln!(stim, "Writing empty");
-
-        });
+        let i2c1 = I2c(i2c);
+        iprintln!("Writing empty");
     });    
     
     ssd1306::write_control_2(t, &r.I2C1, &[0x20, 0, 0x21, 0, 127, 0x22, 0, 7]);
     
     for i in 0..64 {
-        r.ITM.claim(t, |itm, _t| {
-            iprintln!(&itm.stim[0], "Writing {}", i);
-        });
+        iprintln!("Writing {}", i);
 
-        ssd1306::write_data(t, &r.I2C1, &[0, 0, 0, 0, 0, 0, 0, 0]);
+        ssd1306::write_data(t, &r.I2C1, &[0; 8]);
         ssd1306::wait_buffer();
     } 
 
-    r.ITM.claim(t, |itm, _t| {
-        iprintln!(&itm.stim[0], "control");
-    });
+    iprintln!("control");
 
     ssd1306::write_control_2(t, &r.I2C1, &[0x21, 0, 127, 0x22, 1, 7]);
 
@@ -287,9 +183,7 @@ fn idle(t: &mut Threshold, r: idle::Resources) -> ! {
         ssd1306::write_data(t, &r.I2C1, &[0, 0]);
     }
  */
-    r.ITM.claim(t, |itm, t| {
-        iprintln!(&itm.stim[0], "done rest");
-    });
+    iprintln!("done rest");
 
     loop {
         rtfm::wfi();
@@ -302,19 +196,19 @@ pub enum ReadState {
     Msb(u8)
 }
 
-fn i2c_ev_interrupt(_t: &mut Threshold, r: I2C1_EV::Resources) {
+fn i2c_ev_interrupt(t: &mut Threshold, r: I2C1_EV::Resources) {
     let a = (r.I2C1).sr1.read().bits();
-    let itm = &r.ITM.stim[0];
     //iprintln!(itm, "ev {}", a);
-    let i2c = &**r.I2C1;
-    let i2c = I2c(i2c);
-    ssd1306::event_interrupt(&i2c, itm);
+    let i2c = r.I2C1;
+    i2c.claim(t, |i2c1, t| {
+        let i2c = I2c(i2c1);
+        ssd1306::event_interrupt(&i2c);
+    });
 }
 
 fn i2c_er_interrupt(_t: &mut Threshold, r: I2C1_ER::Resources) {
     let a = (r.I2C1).sr1.read();
-    let itm = &r.ITM.stim[0];
-    iprintln!(itm, "er {} / AF {}", a.bits(), a.af().bit_is_set());
+    iprintln!("er {} / AF {}", a.bits(), a.af().bit_is_set());
     rtfm::bkpt();
 }
 
@@ -323,11 +217,9 @@ static mut LAST_TEMP : u16 = 0;
 
 fn spi_interrupt(_t: &mut Threshold, r: SPI2::Resources) {
     let spi_res = unsafe { &mut SPI_RES };
-    let stim = &r.ITM.stim[0];
-    let spi = Spi(&**r.SPI2);
+    let spi = Spi(&*r.SPI2_reg);
 
-    spi_res.process_int(stim, &spi);
-
+    spi_res.process_int(&spi);
 
     unsafe {
         match SPI_RES.state {
