@@ -92,11 +92,11 @@ pub static NUMBERS : [[u8;5];10] = [
         0b11101110,
     ], // 9
     [
+        0b01100000,
+        0b10010001,
+        0b10010001,
+        0b10010001,
         0b01111110,
-        0b10010001,
-        0b10010001,
-        0b10010001,
-        0b11100000,
     ]
 ];
 
@@ -298,12 +298,12 @@ pub fn start_next<'a, S: I2C + Any>(i2c: I2cState<'a, S, Write>) {
             if a & 0x80 == 0 {
                 LCD_STATE = LcdState::Data(a);
                 i2c.write(0x40);
-                iprintln!("dat {}", a);
+                //iprintln!("dat {}", a);
             } else {
                 let a = a & (!0x80);
                 LCD_STATE = LcdState::Control2(a);
                 i2c.write(0x80);
-                iprintln!("ctrl {}", a);
+                //iprintln!("ctrl {}", a);
             }
         } else {
             ::rtfm::bkpt();
@@ -317,10 +317,10 @@ pub fn event_interrupt<'a, S>(i2c: &I2c<'a, S>) where S : 'static + I2C {
             I2cStateOptions::Started(s) => {
                 s.write_address(ADDRESS, false);
 
-                iprintln!("st");
+                //iprintln!("st");
             }, 
             I2cStateOptions::CanWrite(w) => {
-                iprintln!("wr");
+                //iprintln!("wr");
 
                 match LCD_STATE {
                     LcdState::Stopped => {
@@ -336,18 +336,18 @@ pub fn event_interrupt<'a, S>(i2c: &I2c<'a, S>) where S : 'static + I2C {
                             w.write(0x80);
                             LCD_STATE = LcdState::Control2(b);
                         } else {
-                            iprintln!("ectrl");
+                            //iprintln!("ectrl");
                             start_next(w)
                         }
                     },
                     LcdState::Control2(b) => {
                         let d = BUFFER.read();
                         if let Some(d) = d {
-                            iprintln!("cb {}", d);
+                            //iprintln!("cb {}", d);
                             w.write(d);
                             LCD_STATE = LcdState::Control(b - 1);
                         } else {
-                            iprintln!("ctrle");
+                            //iprintln!("ctrle");
                             w.suspend();
                         }
                     },
@@ -356,16 +356,16 @@ pub fn event_interrupt<'a, S>(i2c: &I2c<'a, S>) where S : 'static + I2C {
                         if b > 0 {
                             let d = BUFFER.read();
                             if let Some(d) = d {
-                                iprintln!("db {}", d);
+                                //iprintln!("db {}", d);
                                 w.write(d);
                                 LCD_STATE = LcdState::Data(b - 1);
                             } else {
-                                iprintln!("dbe");
+                                //iprintln!("dbe");
                                 // data to write but buffer is empty
                                 w.suspend()
                             }
                         } else {
-                            iprintln!("nmd");
+                            //iprintln!("nmd");
                             if let Some(d) = BUFFER.peak() {
                                 if d & 0x80 == 0 {
                                     // if we have further data just queue it
@@ -376,7 +376,7 @@ pub fn event_interrupt<'a, S>(i2c: &I2c<'a, S>) where S : 'static + I2C {
                                     LCD_STATE = LcdState::Idle;
                                 } 
                             } else {
-                                iprintln!("stopped");
+                                //iprintln!("stopped");
                                 w.stop();
                                 LCD_STATE = LcdState::Stopped;
                             }

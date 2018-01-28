@@ -1,5 +1,6 @@
 use spi;
 use spi::{Spi, SPIResult};
+use cortex_m;
 
 pub enum OpCode {
     PowerDown = 0b00000000,
@@ -73,7 +74,7 @@ impl SpiResource {
                 Some(a)
             },
             SPIResult::Error(e) =>  {
-                // iprintln!(stim, "read error: {}", e);
+                iprintln!("read error: {}", e);
                 None
             }
         }
