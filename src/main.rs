@@ -102,13 +102,13 @@ fn init(p: init::Peripherals, _r : init::Resources) -> init::LateResources {
     let afio = Afio(&p.device.AFIO);
     let afio_periph = afio.get_peripherals();
 
+    let mut pump_flag = true;
+    let mut pump_pin = pinsb.7.set_output_10MHz().set_cnf_0();
     let pinb5 = pinsb.5.set_input().set_cnf_2().set_pull_down();
-    iprintln!("Set b5 to Input, whatever that means");
-    loop { if pinb5.read() {
-        iprintln!("pressed");
-    } else {
-        iprintln!("not pressed");
-    }}
+    loop { 
+        pump_flag = pinb5.read();
+        pump_pin.set(pump_flag);
+    }
 
     // initialize the temperature sensor
     tempsensor::init_temp(&p.device.SPI2, pinsb.12, pinsb.13, pinsb.14, pinsb.15);
