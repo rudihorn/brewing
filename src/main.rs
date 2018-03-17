@@ -24,7 +24,7 @@ use tslib::{rcc, afio, spi, gpio, i2c};
 
 use rcc::{Rcc};
 use afio::Afio;
-use gpio::{Gpio};
+use gpio::{Gpio, GpioPin};
 use spi::{Spi};
 use i2c::{I2c};
 use tempsensor::{SPI_RES, SpiState};
@@ -102,11 +102,22 @@ fn init(p: init::Peripherals, _r : init::Resources) -> init::LateResources {
     let afio = Afio(&p.device.AFIO);
     let afio_periph = afio.get_peripherals();
 
+    let pinb5 = pinsb.5.set_input().set_cnf_2().set_pull_down();
+    iprintln!("Set b5 to Input, whatever that means");
+    loop { if pinb5.read() {
+        iprintln!("pressed");
+    } else {
+        iprintln!("not pressed");
+    }}
+
     // initialize the temperature sensor
     tempsensor::init_temp(&p.device.SPI2, pinsb.12, pinsb.13, pinsb.14, pinsb.15);
 
+    iprintln!("Temperature sensor initialized");
+    
+
     // initialize the screen
-    screen::init_screen(&p.device.I2C1, pinsb.8, pinsb.9, afio_periph.i2c1);
+    // screen::init_screen(&p.device.I2C1, pinsb.8, pinsb.9, afio_periph.i2c1);
     
     iprintln!("Finished initialization");
 
@@ -262,6 +273,7 @@ fn timer2_interrupt(t: &mut Threshold, r: TIM2::Resources) {
 
     if unsafe { CNTR } % 1000 == 0 {
         iprintln!("ext {}", tim2.sr.read().bits());
+
         screen::set_address(t, &r.I2C1, 0, 1);
     }
     if unsafe { CNTR } % 2000 == 0 {
