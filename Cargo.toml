@@ -1,5 +1,5 @@
 [package]
-name = "MAX31865"
+name = "max31865"
 version = "0.1.0"
 authors = ["Rudi Horn <dyn-git@rudi-horn.de>"]
 categories = [

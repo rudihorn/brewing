@@ -1,8 +1,7 @@
 
 #[macro_use]
+#[allow(unused_imports)]
 use debug;
-use cortex_m;
-use init;
 use stm32;
 use ssd1306;
 
@@ -32,7 +31,6 @@ pub fn init_screen<'a>(
 
     ssd1306::sync_init(&i2c1);
 }  
-
 
 pub fn set_address_mode<'a, S>(
     t: &mut Threshold,
@@ -73,7 +71,14 @@ where
     ssd1306::write_data(t, i2c1, &[0, 1, 0]);
 }
 
-
+pub fn write_empty_digit<'a, S>(
+    t: &mut Threshold,
+    i2c1: &'a S)
+where
+    S : Resource<Data = stm32::I2C1> 
+{
+    ssd1306::write_data(t, i2c1, &[0; 7]);
+}
 
 pub fn write_number<'a, S>(
     t: &mut Threshold,

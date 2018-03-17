@@ -2,11 +2,13 @@
 #[macro_export]
 macro_rules! iprint {
     ($s:expr) => {
+        #[allow(unused_unsafe)]
         let stim = unsafe { &mut cortex_m::peripheral::Peripherals::steal().ITM.stim[0] };
         cortex_m::itm::write_str(stim, $s);
     };
 
     ($($arg:tt)*) => {
+        #[allow(unused_unsafe)]
         let stim = unsafe { &mut cortex_m::peripheral::Peripherals::steal().ITM.stim[0] };
         cortex_m::itm::write_fmt(stim, format_args!($($arg)*));
     };

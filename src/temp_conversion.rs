@@ -18,8 +18,6 @@ static LOOKUP_TABLE : &[TempPair]= &[
 ];
 
 pub fn lookup_temperature(val : u16) -> u32 {
-    let conv = val as u32;
-    
     let mut first = &(0, 10000);
     let mut second = &(1000, 10390);
     let mut iterator = LOOKUP_TABLE.iter();

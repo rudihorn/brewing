@@ -1,11 +1,11 @@
+#[macro_use]
+#[allow(unused_imports)]
+use debug;
+use cortex_m;
 
 use core::any::Any;
 use tslib::i2c::{I2c, I2C, I2CState, I2cState, I2cStateOptions, Write};
 use stm32::I2C1;
-
-#[macro_use]
-use debug;
-use cortex_m;
 
 use cyclicbuffer::CyclicBuffer;
 
@@ -123,7 +123,7 @@ pub fn write_control<'a, S>(i2c: &I2c<'a, S>, b : u8) -> I2CState where S : 'sta
 }
 
 pub fn sync_init<'a, S>(i2c: &I2c<'a, S>) where S : 'static + I2C {
-    let a = i2c.start_write_polling(ADDRESS)
+    let st = i2c.start_write_polling(ADDRESS)
         .cont(|| {i2c.write_data(0x00)})
         .cont(|| {i2c.write_data(CMD_DISPLAYOFF)})
         .cont(|| {i2c.stop()})
@@ -154,61 +154,8 @@ pub fn sync_init<'a, S>(i2c: &I2c<'a, S>) where S : 'static + I2C {
         .cont(|| {write_control(&i2c, CMD_DISPLAYON)})
         .cont(|| {i2c.stop()});
 
-    iprintln!("state {}", a);
-
-    let a = a.cont(|| { i2c.start_write_polling(ADDRESS)})
-        .cont(|| {i2c.write_data(0x80)})
-        .cont(|| {i2c.write_data(0x21)})
-        .cont(|| {i2c.write_data(0x80)})
-        .cont(|| {i2c.write_data(0x00)})
-        .cont(|| {i2c.write_data(0x80)})
-        .cont(|| {i2c.write_data(127)})
-        .cont(|| {i2c.write_data(0x40)})
-        .cont(|| {i2c.write_data(0x00)})
-        .cont(|| {i2c.write_data(0x00)})
-        .cont(|| {i2c.write_data(0x00)})
-        .cont(|| {i2c.write_data(0x00)})
-        .cont(|| {i2c.write_data(0x00)})
-        .cont(|| {i2c.write_data(0x00)})
-        .cont(|| {i2c.write_data(0x00)})
-        .cont(|| {i2c.write_data(0x00)})
-        .cont(|| {i2c.write_data(0x00)})
-        .cont(|| {i2c.write_data(0x00)})
-        .cont(|| {i2c.write_data(0x00)})
-        .cont(|| {i2c.write_data(0x00)})
-        .cont(|| {i2c.write_data(0x00)})
-        .cont(|| {i2c.write_data(0x00)})
-        .cont(|| {i2c.write_data(0x00)})
-        .cont(|| {i2c.write_data(0x00)})
-        .cont(|| {i2c.write_data(0x00)})
-        .cont(|| {i2c.write_data(0x00)})
-        .cont(|| {i2c.write_data(0x00)})
-        .cont(|| {i2c.write_data(0x00)})
-        .cont(|| {i2c.write_data(0x00)})
-        .cont(|| {i2c.write_data(0x00)});
-
-    let mut st = a;
-
-    for s in NUMBERS[0].iter() {
-        st = st.cont(|| {i2c.write_data(*s)});
-    }
-
-    for i in 0..10 {
-        st = st.cont(|| {i2c.write_data(0x00)});
-    }
-
-    for s in NUMBERS[1].iter() {
-        st = st.cont(|| {i2c.write_data(*s)});
-    }
-
-    for i in 0..10 {
-        st = st.cont(|| {i2c.write_data(0x00)});
-    }
-
-    st = st.cont(|| {i2c.stop()});
-    let cr1 = i2c.0.cr1.read().bits();
-
     if let I2CState::Error(e) = st {
+        iprintln!("I2C encountered error {}", e);
         ::rtfm::bkpt();
     }
 }
@@ -253,14 +200,14 @@ where
 
     unsafe{
         if let LcdState::Stopped = LCD_STATE {
-            i2c.claim(t, |i2c,t| {
+            i2c.claim(t, |i2c,_t| {
                 I2c(&*i2c).enable_start();
             });
             LCD_STATE = LcdState::Idle;
         }
     }
 
-    i2c.claim(t, |i2c,t| {
+    i2c.claim(t, |i2c,_t| {
         I2c(&*i2c).listen();
     });
 }
@@ -279,14 +226,14 @@ where
 
     unsafe{
         if let LcdState::Stopped = LCD_STATE {
-            i2c.claim(t, |i2c,t| {
+            i2c.claim(t, |i2c,_t| {
                 I2c(&*i2c).enable_start();
             });
             LCD_STATE = LcdState::Idle;
         }
     }
 
-    i2c.claim(t, |i2c,t| {
+    i2c.claim(t, |i2c,_t| {
         I2c(&*i2c).listen();
     });
 }
