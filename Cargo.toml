@@ -14,10 +14,11 @@ keywords = [
 ]
 
 [dependencies]
-cortex-m = "0.4.3"
-cortex-m-rtfm = "0.3.1"
-cortex-m-semihosting = "0.2.0"
-tslib = { path = "../tslib" }
+cortex-m = "*"
+cortex-m-rtfm = "*"
+cortex-m-rt = {version = "*", features = ["abort-on-panic"]}
+tslib = { path = "../tslib", features = ["rt"] }
+
 
 [profile.release]
 debug = true
