@@ -18,10 +18,10 @@ pub fn init_temp<'a>(
     pinb14: GpioPinDefault<'a, stm32::GPIOB, Pin14>, 
     pinb15: GpioPinDefault<'a, stm32::GPIOB, Pin15>) {
 
-    let pinb12 = pinb12.set_output_10MHz_h().set_alt_output_push_pull_h(); // NSS
-    let pinb13 = pinb13.set_output_10MHz_h().set_alt_output_push_pull_h(); // SCK
-    let pinb14 = pinb14.set_input_h().set_floating_input_h(); // MISO
-    let pinb15 = pinb15.set_output_10MHz_h().set_alt_output_push_pull_h(); // MISO
+    let pinb12 = pinb12.set_output_10MHz().set_alt_output_push_pull(); // NSS
+    let pinb13 = pinb13.set_output_10MHz().set_alt_output_push_pull(); // SCK
+    let pinb14 = pinb14.set_input().set_floating_input(); // MISO
+    let pinb15 = pinb15.set_output_10MHz().set_alt_output_push_pull(); // MISO
 
     let spi2 = Spi(spi2);
     let r = spi2.start_init();

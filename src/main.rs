@@ -4,6 +4,7 @@
 pub extern crate tslib;
 pub extern crate cortex_m;
 pub extern crate cortex_m_rtfm as rtfm;
+pub extern crate panic_abort;
 
 pub use tslib::stm32f103xx_hal as hal;
 pub use hal::stm32f103xx as stm32;

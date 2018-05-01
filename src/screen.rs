@@ -16,8 +16,8 @@ pub fn init_screen<'a>(
     pinb9: GpioPinDefault<'a, stm32::GPIOB, Pin9>,
     afio_i2c1: AfioI2C1Peripheral<'a, NotConfigured>) {
     
-    let pinb8 = pinb8.set_output_10MHz_h().set_alt_output_open_drain_h();
-    let pinb9 = pinb9.set_output_10MHz_h().set_alt_output_open_drain_h();
+    let pinb8 = pinb8.set_output_10MHz().set_alt_output_open_drain();
+    let pinb9 = pinb9.set_output_10MHz().set_alt_output_open_drain();
 
     let afio_i2c1 = afio_i2c1.set_remapped();
     let i2c1 = I2c(i2c1);
